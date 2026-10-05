@@ -1,0 +1,6 @@
+{
+  "name": "BarberShop - Cartão Virtual Premium",
+  "description": "Aplicativo de cartão virtual premium para barbearias com agendamento via WhatsApp, catálogo de serviços, história e painel administrativo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
