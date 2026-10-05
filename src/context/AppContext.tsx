@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import {
   BarbershopInfo,
   ServiceItem,
@@ -17,7 +17,10 @@ import {
   GallerySettings,
   GalleryItem,
   DaySchedule,
-  ClosedPopupConfig
+  ClosedPopupConfig,
+  SupabaseConfig,
+  CloudSyncStatus,
+  CloudBackendState
 } from '../types';
 import {
   DEFAULT_BARBERSHOP,
@@ -38,6 +41,12 @@ import {
   DEFAULT_CLOSED_POPUP
 } from '../data/defaultData';
 import { calculateBusinessStatus } from '../utils/scheduleUtils';
+import {
+  initSupabase,
+  isSupabaseConfigured,
+  syncFullStateToSupabase,
+  subscribeToSupabaseRealtime
+} from '../lib/supabase';
 
 interface AppContextType {
   barbershop: BarbershopInfo;
@@ -174,6 +183,13 @@ interface AppContextType {
   resetToDefaults: () => void;
   exportDataJSON: () => string;
   importDataJSON: (jsonStr: string) => boolean;
+
+  // Cloud Backend & Supabase Integration
+  cloudSyncStatus: CloudSyncStatus;
+  lastSyncTime: string;
+  supabaseConfig: SupabaseConfig | undefined;
+  syncWithCloud: () => Promise<void>;
+  saveSupabaseConfig: (url: string, anonKey: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -391,6 +407,178 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isMediaPickerOpen, setIsMediaPickerOpen] = useState(false);
   const [mediaPickerCallback, setMediaPickerCallback] = useState<((url: string) => void) | null>(null);
 
+  // Cloud Backend & Supabase State
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('synced');
+  const [lastSyncTime, setLastSyncTime] = useState<string>(() => new Date().toLocaleTimeString('pt-BR'));
+  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig | undefined>(() => {
+    const envUrl = (import.meta.env.VITE_SUPABASE_URL as string) || '';
+    const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || '';
+    return {
+      url: envUrl,
+      anonKey: envKey,
+      connected: isSupabaseConfigured(),
+      realtimeEnabled: true
+    };
+  });
+
+  const isInitialLoadRef = useRef(true);
+  const saveTimeoutRef = useRef<any>(null);
+
+  // Sincronizar estado completo a partir do Backend Cloud
+  const syncWithCloud = async () => {
+    try {
+      setCloudSyncStatus('syncing');
+      const res = await fetch('/api/state');
+      if (res.ok) {
+        const cloudData: CloudBackendState = await res.json();
+        if (cloudData.barbershop) setBarbershop(cloudData.barbershop);
+        if (cloudData.services) setServices(cloudData.services);
+        if (cloudData.bookingSettings) setBookingSettings(cloudData.bookingSettings);
+        if (cloudData.theme) setTheme(cloudData.theme);
+        if (cloudData.bookings) setBookings(cloudData.bookings);
+        if (cloudData.metrics) setMetrics(cloudData.metrics);
+        if (cloudData.buttons) setButtons(cloudData.buttons);
+        if (cloudData.sections) setSections(cloudData.sections);
+        if (cloudData.instagram) setInstagram(cloudData.instagram);
+        if (cloudData.wifi) setWifi(cloudData.wifi);
+        if (cloudData.pix) setPix(cloudData.pix);
+        if (cloudData.mediaItems) setMediaItems(cloudData.mediaItems);
+        if (cloudData.heroSlides) setHeroSlides(cloudData.heroSlides);
+        if (cloudData.heroSettings) setHeroSettings(cloudData.heroSettings);
+        if (cloudData.gallery) setGallery(cloudData.gallery);
+        if (cloudData.weeklySchedule) setWeeklySchedule(cloudData.weeklySchedule);
+        if (cloudData.closedPopup) setClosedPopup(cloudData.closedPopup);
+        if (cloudData.supabaseConfig) {
+          setSupabaseConfig(cloudData.supabaseConfig);
+          if (cloudData.supabaseConfig.url && cloudData.supabaseConfig.anonKey) {
+            initSupabase(cloudData.supabaseConfig.url, cloudData.supabaseConfig.anonKey);
+          }
+        }
+        setLastSyncTime(new Date().toLocaleTimeString('pt-BR'));
+        setCloudSyncStatus('synced');
+      } else {
+        setCloudSyncStatus('offline');
+      }
+    } catch {
+      setCloudSyncStatus('offline');
+    }
+  };
+
+  const saveSupabaseConfig = async (url: string, anonKey: string) => {
+    const newConfig: SupabaseConfig = {
+      url,
+      anonKey,
+      connected: Boolean(url && anonKey && url !== 'https://your-project.supabase.co'),
+      lastTestedAt: new Date().toISOString(),
+      realtimeEnabled: true
+    };
+    setSupabaseConfig(newConfig);
+    initSupabase(url, anonKey);
+
+    try {
+      await fetch('/api/supabase/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig)
+      });
+      setLastSyncTime(new Date().toLocaleTimeString('pt-BR'));
+    } catch (e) {
+      console.warn('Erro ao salvar config do Supabase:', e);
+    }
+  };
+
+  // Carga inicial e polling a cada 6 segundos para sincronização multi-dispositivo em tempo real
+  useEffect(() => {
+    syncWithCloud().then(() => {
+      setTimeout(() => {
+        isInitialLoadRef.current = false;
+      }, 500);
+    });
+
+    const interval = setInterval(() => {
+      syncWithCloud();
+    }, 6000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Escutar eventos em tempo real do Supabase Realtime se configurado
+  useEffect(() => {
+    const unsubscribe = subscribeToSupabaseRealtime(() => {
+      syncWithCloud();
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [supabaseConfig]);
+
+  // Persistir alterações no Cloud Backend (com debounce de 800ms)
+  useEffect(() => {
+    if (isInitialLoadRef.current) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        setCloudSyncStatus('syncing');
+        const payload: Partial<CloudBackendState> = {
+          barbershop,
+          services,
+          bookingSettings,
+          theme,
+          bookings,
+          metrics,
+          buttons,
+          sections,
+          instagram,
+          wifi,
+          pix,
+          mediaItems,
+          heroSlides,
+          heroSettings,
+          gallery,
+          weeklySchedule,
+          closedPopup
+        };
+
+        const res = await fetch('/api/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          setLastSyncTime(new Date().toLocaleTimeString('pt-BR'));
+          setCloudSyncStatus('synced');
+        } else {
+          setCloudSyncStatus('offline');
+        }
+
+        if (isSupabaseConfigured()) {
+          syncFullStateToSupabase(payload as CloudBackendState);
+        }
+      } catch {
+        setCloudSyncStatus('offline');
+      }
+    }, 800);
+  }, [
+    barbershop,
+    services,
+    bookingSettings,
+    theme,
+    bookings,
+    buttons,
+    sections,
+    instagram,
+    wifi,
+    pix,
+    mediaItems,
+    heroSlides,
+    heroSettings,
+    gallery,
+    weeklySchedule,
+    closedPopup
+  ]);
+
   // Calculate live business status
   const businessStatusResult = useMemo(() => {
     return calculateBusinessStatus(weeklySchedule);
@@ -546,19 +734,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setBookings(prev => [newBooking, ...prev]);
     setMetrics(prev => ({ ...prev, bookingsInitiated: prev.bookingsInitiated + 1 }));
+
+    // Persistir no Cloud Backend
+    fetch('/api/bookings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newBooking)
+    }).catch(err => console.warn('Erro ao salvar agendamento na nuvem:', err));
+
     return newBooking;
   };
 
   const updateBookingStatus = (id: string, status: BookingRecord['status']) => {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
+    fetch(`/api/bookings/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    }).catch(err => console.warn('Erro ao atualizar agendamento na nuvem:', err));
   };
 
   const deleteBooking = (id: string) => {
     setBookings(prev => prev.filter(b => b.id !== id));
+    fetch(`/api/bookings/${id}`, { method: 'DELETE' })
+      .catch(err => console.warn('Erro ao excluir agendamento na nuvem:', err));
   };
 
   const trackMetric = (key: keyof MetricStats) => {
     setMetrics(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
+    fetch('/api/metrics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key })
+    }).catch(() => {});
   };
 
   const loginAdmin = (password: string): boolean => {
@@ -1040,7 +1248,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateClosedPopup,
         resetToDefaults,
         exportDataJSON,
-        importDataJSON
+        importDataJSON,
+        cloudSyncStatus,
+        lastSyncTime,
+        supabaseConfig,
+        syncWithCloud,
+        saveSupabaseConfig
       }}
     >
       {children}

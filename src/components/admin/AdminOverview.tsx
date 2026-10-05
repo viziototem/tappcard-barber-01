@@ -283,6 +283,28 @@ export const AdminOverview: React.FC<{ onNavigateTab: (tab: string) => void }> =
 
         {/* Quick Info Summary */}
         <div className="space-y-4">
+          {/* Cloud & Supabase Card */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-950/30 to-[#141414] border border-emerald-500/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Backend em Nuvem Ativo
+              </h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                PostgreSQL
+              </span>
+            </div>
+            <p className="text-xs text-stone-400 leading-relaxed">
+              Persistência multi-dispositivo habilitada. Qualquer edição reflete imediatamente nos celulares dos clientes.
+            </p>
+            <button
+              onClick={() => onNavigateTab('supabase')}
+              className="w-full py-2 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-xs font-semibold text-emerald-300 transition-colors cursor-pointer text-center"
+            >
+              Configurar Supabase & SQL
+            </button>
+          </div>
+
           <div className="p-5 rounded-2xl bg-[#141414] border border-white/[0.08] space-y-3">
             <h3 className="text-sm font-bold text-white tracking-tight">
               Status & Horário

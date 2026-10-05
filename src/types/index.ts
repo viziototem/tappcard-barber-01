@@ -294,3 +294,36 @@ export interface ClosedPopupConfig {
   openLabel: string;
   closedLabel: string;
 }
+
+// Cloud Backend & Supabase Types
+export interface SupabaseConfig {
+  url: string;
+  anonKey: string;
+  connected: boolean;
+  lastTestedAt?: string;
+  realtimeEnabled: boolean;
+}
+
+export type CloudSyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
+
+export interface CloudBackendState {
+  barbershop: BarbershopInfo;
+  services: ServiceItem[];
+  bookingSettings: BookingSettings;
+  theme: ThemeConfig;
+  bookings: BookingRecord[];
+  metrics: MetricStats;
+  buttons: ButtonItem[];
+  sections: PageSection[];
+  instagram: InstagramConfig;
+  wifi: WifiConfig;
+  pix: PixConfig;
+  mediaItems: MediaItem[];
+  heroSlides: HeroSlide[];
+  heroSettings: HeroCarouselSettings;
+  gallery: GallerySettings;
+  weeklySchedule: DaySchedule[];
+  closedPopup: ClosedPopupConfig;
+  supabaseConfig?: SupabaseConfig;
+  lastUpdated?: string;
+}

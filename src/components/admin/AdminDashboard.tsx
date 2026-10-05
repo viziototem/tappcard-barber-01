@@ -14,6 +14,7 @@ import { AdminHeroCarousel } from './AdminHeroCarousel';
 import { AdminGalleryManager } from './AdminGalleryManager';
 import { AdminBusinessHours } from './AdminBusinessHours';
 import { AdminClosedPopup } from './AdminClosedPopup';
+import { AdminSupabase } from './AdminSupabase';
 import { PublicCard } from '../public/PublicCard';
 import {
   LayoutDashboard,
@@ -39,13 +40,16 @@ import {
   Image as ImageIcon,
   Sliders,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Database,
+  Cloud
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
-  const { barbershop, logoutAdmin, setCurrentView, bookings } = useApp();
+  const { barbershop, logoutAdmin, setCurrentView, bookings, cloudSyncStatus, supabaseConfig } = useApp();
   const [activeTab, setActiveTab] = useState<
     | 'overview'
+    | 'supabase'
     | 'media'
     | 'hero'
     | 'gallery'
@@ -79,8 +83,9 @@ export const AdminDashboard: React.FC = () => {
 
   const navigationTabs: NavTabItem[] = [
     { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
-    { id: 'media', label: 'Biblioteca de Imagens', icon: ImageIcon, highlight: true },
-    { id: 'hero', label: 'Banner Principal (Carrossel)', icon: Sliders, highlight: true },
+    { id: 'supabase', label: 'Nuvem & Supabase', icon: Database, highlight: true },
+    { id: 'media', label: 'Biblioteca de Imagens', icon: ImageIcon },
+    { id: 'hero', label: 'Banner Principal (Carrossel)', icon: Sliders },
     { id: 'gallery', label: 'Galeria de Cortes', icon: Sparkles },
     { id: 'hours', label: 'Horário de Funcionamento', icon: Clock },
     { id: 'closed_popup', label: 'Aviso de Barbearia Fechada', icon: AlertCircle },
@@ -130,6 +135,19 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Cloud Backend & Supabase Status Badge */}
+          <button
+            onClick={() => setActiveTab('supabase')}
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-semibold transition-all cursor-pointer"
+            title="Backend em Nuvem Persistente & Supabase"
+          >
+            <Cloud className="w-3.5 h-3.5" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="hidden md:inline">
+              {supabaseConfig?.connected ? 'Supabase Conectado' : 'Nuvem Ativa'}
+            </span>
+          </button>
+
           {/* Publish Changes button with visual confirmation */}
           <button
             onClick={handlePublish}
@@ -249,6 +267,7 @@ export const AdminDashboard: React.FC = () => {
             {activeTab === 'overview' && (
               <AdminOverview onNavigateTab={(t: any) => setActiveTab(t)} />
             )}
+            {activeTab === 'supabase' && <AdminSupabase />}
             {activeTab === 'media' && <AdminMediaManager />}
             {activeTab === 'hero' && <AdminHeroCarousel />}
             {activeTab === 'gallery' && <AdminGalleryManager />}
